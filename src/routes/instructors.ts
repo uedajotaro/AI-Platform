@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import type { Env, Instructor } from '../types';
 import { dbHelper } from '../db';
 import { authMiddleware, requireRole } from '../auth';
+import { recommendJobsForInstructor } from '../recommendation';
 
 const instructors = new Hono<{ Bindings: Env }>();
 
@@ -217,6 +218,42 @@ instructors.post('/:id/apply', authMiddleware, requireRole('instructor'), async 
     return c.json({ message: 'Application submitted', id: result.meta.last_row_id }, 201);
   } catch (error) {
     console.error('Apply to job error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// GET /instructors/:id/recommended-jobs - Get recommended jobs for instructor
+instructors.get('/:id/recommended-jobs', authMiddleware, requireRole('instructor'), async (c) => {
+  try {
+    const session = c.get('session');
+    const instructorId = c.req.param('id');
+
+    // Verify instructor belongs to current user
+    const instructor = await dbHelper.queryOne<Instructor>(
+      c.env.DB,
+      'SELECT * FROM instructors WHERE id = ? AND user_id = ?',
+      [instructorId, session.userId]
+    );
+
+    if (!instructor) {
+      return c.json({ error: 'Instructor profile not found or access denied' }, 403);
+    }
+
+    // Get recommended jobs
+    const recommendedJobs = await recommendJobsForInstructor(c.env.DB, parseInt(instructorId), 10);
+
+    // Parse JSON fields
+    const jobs = recommendedJobs.map(job => ({
+      ...job,
+      deliverables: dbHelper.parseJSON(job.deliverables) || [],
+      theme_tags: dbHelper.parseJSON(job.theme_tags) || [],
+      tool_tags: dbHelper.parseJSON(job.tool_tags) || [],
+      industry_tags: dbHelper.parseJSON(job.industry_tags) || []
+    }));
+
+    return c.json({ recommended_jobs: jobs });
+  } catch (error) {
+    console.error('Get recommended jobs error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

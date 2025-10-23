@@ -15,6 +15,8 @@ import events from './routes/events';
 import tags from './routes/tags';
 import organizations from './routes/organizations';
 import reviews from './routes/reviews';
+import admin from './routes/admin';
+import notifications from './routes/notifications';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -36,6 +38,8 @@ app.route('/api/events', events);
 app.route('/api/tags', tags);
 app.route('/api/organizations', organizations);
 app.route('/api/reviews', reviews);
+app.route('/api/admin', admin);
+app.route('/api/notifications', notifications);
 
 // Health check
 app.get('/api/health', (c) => {

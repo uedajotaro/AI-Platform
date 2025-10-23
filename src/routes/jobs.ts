@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import type { Env, Job } from '../types';
 import { dbHelper } from '../db';
 import { authMiddleware, requireRole, optionalAuth } from '../auth';
+import { recommendInstructors } from '../recommendation';
 
 const jobs = new Hono<{ Bindings: Env }>();
 
@@ -235,6 +236,75 @@ jobs.get('/:id/candidates', authMiddleware, requireRole('org', 'admin'), async (
     return c.json({ candidates });
   } catch (error) {
     console.error('Get candidates error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// GET /jobs/:id/recommended - Get recommended instructors for a job
+jobs.get('/:id/recommended', authMiddleware, requireRole('org', 'admin'), async (c) => {
+  try {
+    const session = c.get('session');
+    const id = c.req.param('id');
+
+    // Verify ownership
+    const job = await dbHelper.queryOne<any>(
+      c.env.DB,
+      `
+        SELECT j.* FROM jobs j
+        JOIN organizations o ON j.org_id = o.id
+        WHERE j.id = ? AND o.owner_user_id = ?
+      `,
+      [id, session.userId]
+    );
+
+    if (!job) {
+      return c.json({ error: 'Job not found or access denied' }, 403);
+    }
+
+    // Get recommendations
+    const scores = await recommendInstructors(c.env.DB, parseInt(id), 10);
+
+    // Fetch full instructor details
+    const instructorIds = scores.map(s => s.instructor_id);
+    
+    if (instructorIds.length === 0) {
+      return c.json({ recommended: [] });
+    }
+
+    const placeholders = instructorIds.map(() => '?').join(',');
+    const instructors = await dbHelper.query<any>(
+      c.env.DB,
+      `
+        SELECT i.*, u.name, u.email, u.avatar_url
+        FROM instructors i
+        JOIN users u ON i.user_id = u.id
+        WHERE i.id IN (${placeholders})
+      `,
+      instructorIds
+    );
+
+    // Merge scores with instructor data
+    const recommended = instructors.map(inst => {
+      const scoreData = scores.find(s => s.instructor_id === inst.id);
+      return {
+        ...inst,
+        skills: dbHelper.parseJSON(inst.skills) || [],
+        tools: dbHelper.parseJSON(inst.tools) || [],
+        industries: dbHelper.parseJSON(inst.industries) || [],
+        availability_json: dbHelper.parseJSON(inst.availability_json),
+        recommendation_score: scoreData?.score || 0,
+        matched_themes: scoreData?.matched_themes || 0,
+        matched_tools: scoreData?.matched_tools || 0,
+        matched_industries: scoreData?.matched_industries || 0
+      };
+    });
+
+    // Sort by score
+    recommended.sort((a, b) => b.recommendation_score - a.recommendation_score);
+
+    return c.json({ recommended });
+  } catch (error) {
+    console.error('Get recommended instructors error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
