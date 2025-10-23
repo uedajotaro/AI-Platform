@@ -59,6 +59,7 @@ const apiRequest = async (endpoint, options = {}) => {
 
 // Auth API
 const authAPI = {
+  // OTP-based authentication
   login: (email) => 
     apiRequest('/auth/login', {
       method: 'POST',
@@ -71,6 +72,49 @@ const authAPI = {
       method: 'POST',
       body: JSON.stringify({ email, code, name, role }),
       noAuth: true
+    }),
+
+  // Password-based authentication
+  register: (email, password, name, role) =>
+    apiRequest('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, name, role }),
+      noAuth: true
+    }),
+
+  loginWithPassword: (email, password) =>
+    apiRequest('/auth/login/password', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+      noAuth: true
+    }),
+
+  // Password reset
+  requestPasswordReset: (email) =>
+    apiRequest('/auth/password/reset/request', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+      noAuth: true
+    }),
+
+  verifyResetToken: (token) =>
+    apiRequest('/auth/password/reset/verify', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+      noAuth: true
+    }),
+
+  confirmPasswordReset: (token, newPassword) =>
+    apiRequest('/auth/password/reset/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+      noAuth: true
+    }),
+
+  changePassword: (currentPassword, newPassword) =>
+    apiRequest('/auth/password/change', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword })
     }),
 
   logout: () => apiRequest('/auth/logout', { method: 'POST' }),
