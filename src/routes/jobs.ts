@@ -349,28 +349,55 @@ jobs.post('/:id/candidates/:applicationId/accept', authMiddleware, requireRole('
       [applicationId]
     );
 
-    // Create booking (escrow)
-    const amount = job.budget_max || job.budget_min || 0;
-    await dbHelper.execute(
-      c.env.DB,
-      `
-        INSERT INTO bookings 
-        (subject_type, subject_id, org_id, instructor_id, amount, start_at, end_at)
-        VALUES ('job', ?, ?, ?, ?, ?, ?)
-      `,
-      [jobId, job.org_id, application.instructor_id, amount, job.date_range_start, job.date_range_end]
-    );
-
-    // Update job status
+    // Update job status to filled
     await dbHelper.execute(
       c.env.DB,
       'UPDATE jobs SET status = "filled", updated_at = datetime("now") WHERE id = ?',
       [jobId]
     );
 
-    // TODO: Send notification to instructor
+    // Get instructor details for notification
+    const instructor = await dbHelper.queryOne<any>(
+      c.env.DB,
+      'SELECT i.*, u.name, u.email FROM instructors i JOIN users u ON i.user_id = u.id WHERE i.id = ?',
+      [application.instructor_id]
+    );
 
-    return c.json({ message: 'Application accepted and booking created' });
+    // Create notification for instructor (採用通知)
+    if (instructor) {
+      await dbHelper.execute(
+        c.env.DB,
+        `INSERT INTO notifications (user_id, type, title, message, link)
+         VALUES (?, "job_accepted", "案件に採用されました", ?, ?)`,
+        [
+          instructor.user_id,
+          `${job.title}の案件に採用されました。主催者と直接連絡を取って契約を進めてください。`,
+          `/jobs/${jobId}`
+        ]
+      );
+    }
+
+    // Create notification for organization (採用完了通知)
+    await dbHelper.execute(
+      c.env.DB,
+      `INSERT INTO notifications (user_id, type, title, message, link)
+       VALUES (?, "job_filled", "講師を採用しました", ?, ?)`,
+      [
+        session.userId,
+        `${job.title}の案件で講師を採用しました。講師と直接連絡を取って契約を進めてください。`,
+        `/jobs/${jobId}`
+      ]
+    );
+
+    // NOTE: エスクロー機能は削除しました
+    // プラットフォームは講師と企業を繋ぐのみで、決済は当事者間で直接行います
+    // 成約記録は applications テーブルの status="accepted" で保持されます
+
+    return c.json({ 
+      message: 'Application accepted. Please contact the instructor directly to arrange contract and payment.',
+      instructor_email: instructor?.email,
+      instructor_name: instructor?.name
+    });
   } catch (error) {
     console.error('Accept application error:', error);
     return c.json({ error: 'Internal server error' }, 500);
