@@ -100,25 +100,34 @@ auth.post('/verify', async (c) => {
       return c.json({ error: 'Invalid OTP code' }, 400);
     }
 
-    // Mark OTP as used
-    await dbHelper.execute(
-      c.env.DB,
-      'UPDATE otp_codes SET used = 1 WHERE id = ?',
-      [otpRecord.id]
-    );
-
-    // Check if user exists
+    // Check if user exists BEFORE marking OTP as used
     let user = await dbHelper.queryOne<User>(
       c.env.DB,
       'SELECT * FROM users WHERE email = ?',
       [email]
     );
 
+    console.log(`[AUTH] User exists:`, user ? 'YES' : 'NO');
+
     if (!user) {
-      // Create new user
+      // New user - require name and role
       if (!name || !role) {
-        return c.json({ error: 'Name and role are required for new users' }, 400);
+        console.log(`[AUTH] New user but missing name/role. Name: ${name}, Role: ${role}`);
+        // Don't mark OTP as used yet - let user retry with name and role
+        return c.json({ 
+          error: 'Name and role are required for new users',
+          is_new_user: true 
+        }, 400);
       }
+
+      console.log(`[AUTH] Creating new user: ${name}, role: ${role}`);
+
+      // Mark OTP as used BEFORE creating user
+      await dbHelper.execute(
+        c.env.DB,
+        'UPDATE otp_codes SET used = 1 WHERE id = ?',
+        [otpRecord.id]
+      );
 
       const result = await dbHelper.execute(
         c.env.DB,
@@ -131,8 +140,18 @@ auth.post('/verify', async (c) => {
         'SELECT * FROM users WHERE id = ?',
         [result.meta.last_row_id]
       );
+
+      console.log(`[AUTH] New user created with ID: ${user!.id}`);
     } else {
-      // Update email_verified
+      // Existing user - mark OTP as used and update email_verified
+      console.log(`[AUTH] Existing user found with ID: ${user.id}`);
+      
+      await dbHelper.execute(
+        c.env.DB,
+        'UPDATE otp_codes SET used = 1 WHERE id = ?',
+        [otpRecord.id]
+      );
+
       await dbHelper.execute(
         c.env.DB,
         'UPDATE users SET email_verified = 1 WHERE id = ?',
