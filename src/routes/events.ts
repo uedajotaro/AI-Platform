@@ -252,7 +252,7 @@ events.put('/:id', authMiddleware, requireRole('org', 'admin'), async (c) => {
   }
 });
 
-// POST /events/:id/checkout - Create checkout session for ticket purchase
+// POST /events/:id/checkout - Create Stripe Checkout session for ticket purchase
 events.post('/:id/checkout', authMiddleware, requireRole('learner', 'org', 'admin'), async (c) => {
   try {
     const session = c.get('session');
@@ -281,25 +281,94 @@ events.post('/:id/checkout', authMiddleware, requireRole('learner', 'org', 'admi
       return c.json({ error: 'Event is sold out' }, 400);
     }
 
-    // Create ticket reservation
-    const result = await dbHelper.execute(
+    // Get user details
+    const user = await dbHelper.queryOne<any>(
       c.env.DB,
-      'INSERT INTO tickets (event_id, learner_user_id, price_paid, status) VALUES (?, ?, ?, "reserved")',
-      [id, session.userId, event.price]
+      'SELECT * FROM users WHERE id = ?',
+      [session.userId]
     );
 
-    // TODO: Create Stripe payment intent or invoice
-    const ticketId = result.meta.last_row_id;
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404);
+    }
 
     if (payment_method === 'card') {
-      // TODO: Create Stripe checkout session
+      // Stripe payment
+      const Stripe = (await import('stripe')).default;
+      const stripe = new Stripe(c.env.STRIPE_SECRET_KEY, {
+        apiVersion: '2024-11-20.acacia'
+      });
+
+      // Create ticket reservation
+      const ticketResult = await dbHelper.execute(
+        c.env.DB,
+        'INSERT INTO tickets (event_id, learner_user_id, price_paid, status) VALUES (?, ?, ?, "reserved")',
+        [id, session.userId, event.price]
+      );
+
+      const ticketId = ticketResult.meta.last_row_id;
+
+      // Calculate platform fee (10%)
+      const platformFeePercent = 0.10;
+      const platformFee = Math.round(event.price * platformFeePercent);
+      const organizerAmount = event.price - platformFee;
+
+      // Create Stripe Checkout Session
+      const checkoutSession = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'jpy',
+              product_data: {
+                name: event.title,
+                description: `AIMatch Campus - ${event.format === 'online' ? 'オンライン' : '対面'}研修`,
+                metadata: {
+                  event_id: id.toString(),
+                  ticket_id: ticketId.toString()
+                }
+              },
+              unit_amount: event.price,
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: `${c.env.APP_URL}/tickets/${ticketId}?success=true`,
+        cancel_url: `${c.env.APP_URL}/events/${id}?canceled=true`,
+        customer_email: user.email,
+        metadata: {
+          event_id: id.toString(),
+          ticket_id: ticketId.toString(),
+          user_id: session.userId.toString(),
+          platform_fee: platformFee.toString(),
+          organizer_amount: organizerAmount.toString()
+        }
+      });
+
+      // Update ticket with Stripe session ID
+      await dbHelper.execute(
+        c.env.DB,
+        'UPDATE tickets SET stripe_payment_intent_id = ? WHERE id = ?',
+        [checkoutSession.id, ticketId]
+      );
+
       return c.json({
         message: 'Checkout session created',
         ticket_id: ticketId,
-        payment_url: '#TODO_STRIPE_URL'
+        session_id: checkoutSession.id,
+        checkout_url: checkoutSession.url
       });
     } else {
-      // Invoice payment
+      // Invoice payment - create ticket as reserved
+      const result = await dbHelper.execute(
+        c.env.DB,
+        'INSERT INTO tickets (event_id, learner_user_id, price_paid, status) VALUES (?, ?, ?, "reserved")',
+        [id, session.userId, event.price]
+      );
+
+      const ticketId = result.meta.last_row_id;
+
       return c.json({
         message: 'Invoice payment requested',
         ticket_id: ticketId,

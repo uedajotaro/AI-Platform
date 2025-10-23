@@ -17,6 +17,7 @@ import organizations from './routes/organizations';
 import reviews from './routes/reviews';
 import admin from './routes/admin';
 import notifications from './routes/notifications';
+import webhooks from './routes/webhooks';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -40,6 +41,7 @@ app.route('/api/organizations', organizations);
 app.route('/api/reviews', reviews);
 app.route('/api/admin', admin);
 app.route('/api/notifications', notifications);
+app.route('/api/webhooks', webhooks);
 
 // Health check
 app.get('/api/health', (c) => {
@@ -254,6 +256,59 @@ app.get('/', (c) => {
             document.addEventListener('DOMContentLoaded', () => {
                 loadStats();
                 updateAuthUI();
+            });
+        </script>
+    </body>
+    </html>
+  `);
+});
+
+// Event Detail Page
+app.get('/events/:id', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>イベント詳細 - AIMatch Campus</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/css/custom.css" rel="stylesheet">
+    </head>
+    <body class="bg-gray-50">
+        <!-- Header -->
+        <header class="bg-white shadow-sm">
+            <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div class="flex justify-between items-center">
+                    <a href="/" class="flex items-center space-x-2">
+                        <i class="fas fa-graduation-cap text-blue-600 text-2xl"></i>
+                        <span class="text-xl font-bold text-gray-900">AIMatch Campus</span>
+                    </a>
+                    <div id="auth-buttons"></div>
+                </div>
+            </nav>
+        </header>
+
+        <!-- Event Detail Content -->
+        <div id="event-detail-container"></div>
+
+        <!-- Footer -->
+        <footer class="bg-gray-900 text-gray-400 py-8 mt-12">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+                <p>&copy; 2025 AIMatch Campus. All rights reserved.</p>
+            </div>
+        </footer>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/js/api.js"></script>
+        <script src="/static/js/ui.js"></script>
+        <script src="/static/js/auth-modal.js"></script>
+        <script src="/static/js/event-detail.js"></script>
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+                updateAuthUI();
+                initEventDetail();
             });
         </script>
     </body>
