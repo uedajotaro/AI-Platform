@@ -46,6 +46,48 @@ app.get('/api/health', (c) => {
   return c.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Instructor Dashboard
+app.get('/instructor', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>講師ダッシュボード - AIMatch Campus</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/css/custom.css" rel="stylesheet">
+    </head>
+    <body class="bg-gray-50">
+        <!-- Header -->
+        <header class="bg-white shadow-sm">
+            <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div class="flex justify-between items-center">
+                    <a href="/" class="flex items-center space-x-2">
+                        <i class="fas fa-graduation-cap text-blue-600 text-2xl"></i>
+                        <span class="text-xl font-bold text-gray-900">AIMatch Campus</span>
+                    </a>
+                    <div id="auth-buttons" class="flex space-x-4"></div>
+                </div>
+            </nav>
+        </header>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div id="dashboard-content"></div>
+        </main>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/js/api.js"></script>
+        <script src="/static/js/ui.js"></script>
+        <script src="/static/js/auth-modal.js"></script>
+        <script src="/static/js/instructor-dashboard.js"></script>
+    </body>
+    </html>
+  `);
+});
+
 // Root route - Landing page
 app.get('/', (c) => {
   return c.html(`
@@ -57,6 +99,7 @@ app.get('/', (c) => {
         <title>AIMatch Campus - AI研修講師マッチングプラットフォーム</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/css/custom.css" rel="stylesheet">
     </head>
     <body class="bg-gray-50">
         <!-- Header -->
@@ -73,11 +116,11 @@ app.get('/', (c) => {
                         <a href="#instructors" class="text-gray-700 hover:text-blue-600">講師一覧</a>
                         <a href="#about" class="text-gray-700 hover:text-blue-600">概要</a>
                     </div>
-                    <div class="flex space-x-4">
-                        <button onclick="showLogin()" class="px-4 py-2 text-blue-600 hover:text-blue-700">
+                    <div id="auth-buttons" class="flex space-x-4">
+                        <button onclick="showLoginModal()" class="px-4 py-2 text-blue-600 hover:text-blue-700">
                             ログイン
                         </button>
-                        <button onclick="showSignup()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                        <button onclick="showLoginModal()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                             新規登録
                         </button>
                     </div>
@@ -95,10 +138,10 @@ app.get('/', (c) => {
                     講師アサインから研修実施、成果測定まで一気通貫で支援
                 </p>
                 <div class="flex justify-center space-x-4">
-                    <button onclick="showSignup()" class="px-8 py-3 bg-white text-blue-600 rounded-lg font-semibold hover:bg-gray-100">
+                    <button onclick="showLoginModal()" class="px-8 py-3 bg-white text-blue-600 rounded-lg font-semibold hover:bg-gray-100">
                         今すぐ始める
                     </button>
-                    <button onclick="scrollToAbout()" class="px-8 py-3 bg-blue-700 text-white rounded-lg font-semibold hover:bg-blue-800">
+                    <button onclick="document.getElementById('about').scrollIntoView({ behavior: 'smooth' })" class="px-8 py-3 bg-blue-700 text-white rounded-lg font-semibold hover:bg-blue-800">
                         詳しく見る
                     </button>
                 </div>
@@ -172,7 +215,7 @@ app.get('/', (c) => {
                 <p class="text-xl mb-8 text-blue-100">
                     主催者・講師・受講者、どの立場でも無料でご利用いただけます
                 </p>
-                <button onclick="showSignup()" class="px-8 py-3 bg-white text-blue-600 rounded-lg font-semibold hover:bg-gray-100">
+                <button onclick="showLoginModal()" class="px-8 py-3 bg-white text-blue-600 rounded-lg font-semibold hover:bg-gray-100">
                     無料で登録する
                 </button>
             </div>
@@ -186,41 +229,32 @@ app.get('/', (c) => {
         </footer>
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/js/api.js"></script>
+        <script src="/static/js/ui.js"></script>
+        <script src="/static/js/auth-modal.js"></script>
         <script>
-            // API Base URL
-            const API_BASE = '/api';
-
-            // Load stats
+            // Load stats on page load
             async function loadStats() {
                 try {
                     const [instructorsRes, eventsRes, jobsRes] = await Promise.all([
-                        axios.get(API_BASE + '/instructors'),
-                        axios.get(API_BASE + '/events'),
-                        axios.get(API_BASE + '/jobs')
+                        fetch('/api/instructors').then(r => r.json()),
+                        fetch('/api/events').then(r => r.json()),
+                        fetch('/api/jobs').then(r => r.json())
                     ]);
                     
-                    document.getElementById('stats-instructors').textContent = instructorsRes.data.instructors.length;
-                    document.getElementById('stats-events').textContent = eventsRes.data.events.length;
-                    document.getElementById('stats-jobs').textContent = jobsRes.data.jobs.length;
+                    document.getElementById('stats-instructors').textContent = instructorsRes.instructors.length;
+                    document.getElementById('stats-events').textContent = eventsRes.events.length;
+                    document.getElementById('stats-jobs').textContent = jobsRes.jobs.length;
                 } catch (error) {
                     console.error('Failed to load stats:', error);
                 }
             }
 
-            function showLogin() {
-                alert('ログインモーダルは実装中です。\\n\\nAPI経由でログインテストを行うには:\\n\\n1. POST /api/auth/login でOTPを送信\\n2. POST /api/auth/verify でOTPを検証');
-            }
-
-            function showSignup() {
-                alert('登録モーダルは実装中です。\\n\\nAPI経由で登録テストを行うには:\\n\\n1. POST /api/auth/login { "email": "test@example.com" }\\n2. レスポンスのOTPコードを使用\\n3. POST /api/auth/verify { "email": "test@example.com", "code": "123456", "name": "山田太郎", "role": "org" }');
-            }
-
-            function scrollToAbout() {
-                document.getElementById('about').scrollIntoView({ behavior: 'smooth' });
-            }
-
-            // Load stats on page load
-            loadStats();
+            // Initialize on page load
+            document.addEventListener('DOMContentLoaded', () => {
+                loadStats();
+                updateAuthUI();
+            });
         </script>
     </body>
     </html>
