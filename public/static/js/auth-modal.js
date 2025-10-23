@@ -34,20 +34,30 @@ const showLoginModal = () => {
           class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 mb-4"
         />
         <div id="new-user-fields" class="hidden mb-4">
+          <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <p class="text-sm text-blue-800 font-semibold mb-2">
+              <i class="fas fa-info-circle mr-2"></i>初回登録
+            </p>
+            <p class="text-xs text-blue-700">
+              新しいアカウントです。お名前とロールを入力してください。
+            </p>
+          </div>
           <input 
             type="text" 
             id="auth-name" 
-            placeholder="お名前"
+            placeholder="お名前 (例: 山田太郎)"
+            required
             class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 mb-4"
           />
           <select 
             id="auth-role"
+            required
             class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
           >
-            <option value="">ロールを選択</option>
-            <option value="org">主催者 (研修会社/企業)</option>
-            <option value="instructor">講師</option>
-            <option value="learner">受講者</option>
+            <option value="">ロールを選択してください</option>
+            <option value="org">🏢 主催者 (研修会社/企業の担当者)</option>
+            <option value="instructor">👨‍🏫 講師 (研修を提供する講師)</option>
+            <option value="learner">👨‍🎓 受講者 (研修を受講する方)</option>
           </select>
         </div>
         <button 
@@ -65,8 +75,18 @@ const showLoginModal = () => {
       </div>
 
       <div id="auth-dev-info" class="hidden mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-        <p class="text-sm text-yellow-800 font-semibold mb-2">開発環境情報:</p>
-        <p class="text-sm text-yellow-700">OTPコード: <span id="dev-otp-display" class="font-mono font-bold"></span></p>
+        <p class="text-sm text-yellow-800 font-semibold mb-2">📧 開発環境情報:</p>
+        <div class="flex items-center space-x-2">
+          <p class="text-sm text-yellow-700">OTPコード:</p>
+          <span id="dev-otp-display" class="font-mono font-bold text-lg text-yellow-900 bg-yellow-100 px-3 py-1 rounded"></span>
+          <button 
+            onclick="copyOTP()"
+            class="px-3 py-1 bg-yellow-600 text-white text-xs rounded hover:bg-yellow-700"
+          >
+            <i class="fas fa-copy mr-1"></i>コピー
+          </button>
+        </div>
+        <p class="text-xs text-yellow-600 mt-2">※ 本番環境ではメールで送信されます</p>
       </div>
     `,
     []
@@ -133,13 +153,16 @@ const verifyOTP = async () => {
   const nameField = document.getElementById('auth-name');
   const roleField = document.getElementById('auth-role');
   
-  const name = nameField.value.trim();
-  const role = roleField.value;
+  const name = nameField?.value?.trim();
+  const role = roleField?.value;
+
+  console.log('[AUTH] Verifying OTP:', { email, code, name, role });
 
   showLoading('認証中...');
 
   try {
     const result = await authAPI.verify(email, code, name || undefined, role || undefined);
+    console.log('[AUTH] Verification successful:', result);
     hideLoading();
 
     // Save auth data
@@ -148,19 +171,24 @@ const verifyOTP = async () => {
     showToast(`ようこそ、${result.user.name}さん!`, 'success');
 
     // Close modal
-    document.querySelector('.fixed.inset-0').remove();
+    const modal = document.querySelector('.fixed.inset-0');
+    if (modal) modal.remove();
 
     // Redirect to appropriate dashboard
     setTimeout(() => {
       redirectToDashboard(result.user.role);
     }, 1000);
   } catch (error) {
+    console.error('[AUTH] Verification failed:', error);
     hideLoading();
     
     // If error mentions name/role, show new user fields
-    if (error.message.includes('Name and role')) {
-      document.getElementById('new-user-fields').classList.remove('hidden');
-      showToast('新規ユーザーです。名前とロールを入力してください', 'warning');
+    if (error.message.includes('Name and role') || error.message.includes('required for new users')) {
+      const newUserFields = document.getElementById('new-user-fields');
+      if (newUserFields) {
+        newUserFields.classList.remove('hidden');
+        showToast('新規ユーザーです。名前とロールを入力してください', 'warning');
+      }
     } else {
       showToast(error.message || '認証に失敗しました', 'error');
     }
@@ -226,6 +254,16 @@ const updateAuthUI = () => {
       </div>
     `;
   }
+};
+
+// Copy OTP to clipboard
+const copyOTP = () => {
+  const otpText = document.getElementById('dev-otp-display').textContent;
+  navigator.clipboard.writeText(otpText).then(() => {
+    showToast('OTPコードをコピーしました', 'success');
+  }).catch(() => {
+    showToast('コピーに失敗しました', 'error');
+  });
 };
 
 // Initialize auth UI on page load

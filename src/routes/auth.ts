@@ -22,21 +22,29 @@ auth.post('/login', async (c) => {
     const code = dbHelper.generateOTP();
     const expiresAt = dbHelper.expiresAt(15); // 15 minutes
 
+    console.log(`[AUTH] Generating OTP for ${email}: ${code}, expires at: ${expiresAt}`);
+
     // Save OTP to database
-    await dbHelper.execute(
-      c.env.DB,
-      'INSERT INTO otp_codes (email, code, expires_at) VALUES (?, ?, ?)',
-      [email, code, expiresAt]
-    );
+    try {
+      const result = await dbHelper.execute(
+        c.env.DB,
+        'INSERT INTO otp_codes (email, code, expires_at) VALUES (?, ?, ?)',
+        [email, code, expiresAt]
+      );
+      console.log(`[AUTH] OTP saved to database, ID: ${result.meta.last_row_id}`);
+    } catch (dbError) {
+      console.error('[AUTH] Failed to save OTP to database:', dbError);
+      throw dbError;
+    }
 
     // TODO: Send email with OTP using SendGrid
     // For now, return OTP in response (development only)
-    console.log(`OTP for ${email}: ${code}`);
 
     return c.json({
       message: 'OTP sent to email',
       dev_otp: code, // Remove in production
-      email
+      email,
+      expires_at: expiresAt
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -49,9 +57,19 @@ auth.post('/verify', async (c) => {
   try {
     const { email, code, name, role } = await c.req.json();
 
+    console.log(`[AUTH] Verifying OTP for ${email}, code: ${code}`);
+
     if (!email || !code) {
       return c.json({ error: 'Email and code are required' }, 400);
     }
+
+    // Debug: Check all OTP codes for this email
+    const allOtps = await dbHelper.query<any>(
+      c.env.DB,
+      'SELECT id, email, code, expires_at, used, created_at FROM otp_codes WHERE email = ? ORDER BY created_at DESC',
+      [email]
+    );
+    console.log(`[AUTH] All OTP codes for ${email}:`, JSON.stringify(allOtps));
 
     // Verify OTP
     const otpRecord = await dbHelper.queryOne<any>(
@@ -60,8 +78,26 @@ auth.post('/verify', async (c) => {
       [email, code]
     );
 
+    console.log(`[AUTH] OTP Record found:`, otpRecord ? 'YES' : 'NO');
+
     if (!otpRecord) {
-      return c.json({ error: 'Invalid or expired OTP' }, 400);
+      // Check if OTP exists but is expired or used
+      const anyOtp = await dbHelper.queryOne<any>(
+        c.env.DB,
+        'SELECT * FROM otp_codes WHERE email = ? AND code = ? ORDER BY created_at DESC LIMIT 1',
+        [email, code]
+      );
+
+      if (anyOtp) {
+        if (anyOtp.used === 1) {
+          return c.json({ error: 'OTP already used. Please request a new one.' }, 400);
+        }
+        if (anyOtp.expires_at <= new Date().toISOString()) {
+          return c.json({ error: 'OTP expired. Please request a new one.' }, 400);
+        }
+      }
+
+      return c.json({ error: 'Invalid OTP code' }, 400);
     }
 
     // Mark OTP as used
